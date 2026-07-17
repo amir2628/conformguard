@@ -540,3 +540,120 @@ not through `ToolRegistry` -- Phase 2's scope (PROJECT_SPEC §3 Phase 2)
 is the calibration/decision layer only, with no `wrap()`-style engine
 integration requested or built yet, so the demo calls the underlying tool
 explicitly on accept rather than through the adapter.
+
+## Round 4: live 4-model comparison of joint (K=2) calibration
+
+**Directly observed**, run from a scratch location outside this
+repository (`/tmp/conformguard_live_demo`, via an editable install
+pointing at this repo's real source, never a copy) rather than as a
+tracked example -- the script itself is intentionally not part of this
+repository; only the results are recorded here. Same two real checks as
+round 3 (`schema_gate`, `logprob_confidence`), calibrated jointly, run
+against four architecturally different local models with an identical
+live-prompt set (ordinary / hedging / malformed-input categories) so
+results are directly comparable side by side.
+
+### Model selection: a real dead end found and swapped, not forced
+
+The plan called for Qwen2.5:7b, Llama 3.1 8B, Mistral Nemo, and a fourth
+model (Gemma3 or Phi4, whichever pulls cleanly and supports tools).
+`gemma3` has no `tools` capability tag on Ollama's library page (ruled
+out before pulling anything, same check used in round 2). `phi4-mini`
+does have the tag and pulled cleanly, but smoke-testing it before
+committing to a full run showed it never produces a structured
+`tool_calls` response: `finish_reason: "stop"` across 3/3 trials, with
+the model instead narrating and echoing a garbled pseudo-function-call
+string as plain text (e.g. `"[Executing Function: get_weather
+{\"type\":\"object\",\"required\":[\"Berlin\"]}]"`). This is the same
+category of failure as Command R7B (§2 of round 2) -- a model/template
+combination that cannot be made to emit tool calls through Ollama's
+OpenAI-compatible endpoint -- though the specific mechanism was not
+independently root-caused the way Command R7B's `<|START_RESPONSE|>`
+template bug was. `phi4-mini` was removed rather than included as a
+broken row, and `hermes3` (chosen specifically for being tool-use
+fine-tuned, a better prior for actually working) was smoke-tested first
+(2/2 trials: real `tool_calls`, real logprobs) and used instead.
+
+### Per-model calibrated thresholds (K=2, alpha=0.1, ~60 calibration examples each)
+
+| Model | n_calibration (good) | q_hat |
+|---|---|---|
+| Hermes 3 | 58 | 0.0008 (tightest) |
+| Qwen2.5 7B | 57 | 0.0010 |
+| Llama 3.1 8B | 60 | 0.0028 |
+| Mistral Nemo | 57 | 0.0086 (loosest) |
+
+Each threshold is a direct reflection of that model's own real completion
+style during calibration -- consistent with round 2's finding that
+different models' tool-call wrapping conventions (verbose XML-tagged
+hedging prose for Qwen vs. compact, syntax-only completions for
+Llama/Mistral) produce different score distributions, not an artifact of
+this run.
+
+### Consistent finding: all 4 models caught both malformed-input prompts
+
+The SQL-injection-style prompt and the garbled `New_York123!!!???` string
+both forced `schema_gate` to fail (and usually `logprob_confidence` too)
+on every one of the 4 models, every time. This is the one fully
+replicated result across the whole comparison -- consistent with rounds
+1 and 3.
+
+### A one-check-only split reappeared, this time on Hermes 3
+
+The "European capital, starts with a vowel" hedging prompt got Hermes 3
+to guess `{"city": "Paris"}` -- schema-valid -- while `logprob_confidence`
+failed alone (score 0.1798 against q_hat=0.0008):
+
+```
+[PASS] schema_gate: score=0.0000
+[FAIL] logprob_confidence: score=0.1798
+DECISION: ABSTAIN, failed checks: ('logprob_confidence',)
+```
+
+Same mechanism as round 3's Qwen/Paris case: `failed_checks` attributes
+the abstain to exactly the check that actually fired, not an opaque
+"something failed."
+
+### A new, milder quirk: Hermes 3 echoing a tool call as text instead of emitting it structurally
+
+On the second hedging prompt ("second-largest city ... near the
+pyramids"), Hermes 3 did not return `tool_calls` at all -- it returned
+plain content: `'{"arguments": {"city": "Lagos"}, "name": "get_weather"}'`.
+The model clearly "knows" the shape of a tool call (valid JSON, right
+field names) but didn't route it through the structured channel this
+time. Not the same failure as `phi4-mini`/Command R7B (those never
+produced a real `tool_calls` response at all, in any trial observed) --
+here the SAME model produced genuine structured tool calls on 6 of the 7
+live prompts and in every calibration-harvest call. Recorded as a real,
+observed inconsistency for one model on one prompt, not evidence Hermes 3
+can't be used with this adapter.
+
+### An honest surprise: smaller calibration samples produced more abstains on ordinary prompts
+
+Rounds 1 and 3's single-model demos harvested 145-150 calibration
+examples; this 4-model comparison used 60 per model to keep total
+wall-clock reasonable. With less data, thresholds are both tighter and
+noisier (matching Phase 1's own documented relationship between
+calibration size and coverage fluctuation, `docs/guarantee_scope.md`):
+Qwen abstained on its own "Berlin" ordinary prompt this run (schema-valid,
+`logprob_confidence` scored 0.4472 against q_hat=0.0010); Llama abstained
+on "Berlin" and "Tokyo" at scores of 0.0029 against a threshold of
+0.0028 -- a margin so thin it is essentially noise, not a meaningful
+separation; Mistral Nemo abstained on 2 of its 3 ordinary prompts. None
+of this happened in rounds 1 or 3's larger-sample runs on the same kind
+of prompts. This is reported as observed, not re-run or reworded to look
+cleaner -- it is a real, direct illustration of why `docs/guarantee_scope.md`
+treats calibration set size as load-bearing rather than a formality.
+
+### What round 5 should cover
+
+- Root-causing `phi4-mini`'s failure the way Command R7B's was (inspect
+  its Modelfile template, try bypassing it with a raw completion) rather
+  than leaving it at "same category of failure, mechanism not confirmed."
+- Repeating the Hermes 3 tool-call-as-text observation at higher trial
+  counts to see whether it's prompt-specific (as it appeared here) or a
+  more general rate.
+- A controlled comparison of the same model at two different calibration
+  sizes (e.g. 60 vs. 150) to directly measure, rather than anecdotally
+  observe, how much abstain volatility calibration size actually buys
+  down.

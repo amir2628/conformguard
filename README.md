@@ -274,6 +274,15 @@ real one-check-only split — a schema-valid but hedged-into answer
 correctly attributing the abstain to that one check — see
 `docs/real_world_validation.md`'s Round 3.
 
+Extended to a live 4-model side-by-side comparison (Qwen2.5, Llama 3.1,
+Mistral Nemo, Hermes 3 — Phi-4 Mini was tried first and dropped after
+failing to produce structured tool calls) with an identical prompt set
+across all four: same per-check-attributed split reappeared on a
+different model, all four models caught both malformed-input prompts
+consistently, and a smaller calibration sample produced real, honestly
+reported abstain volatility on otherwise-ordinary prompts — see
+`docs/real_world_validation.md`'s Round 4.
+
 ## CLI
 
 ```
@@ -303,6 +312,8 @@ pytest tests/negative_controls                 # required before any release
   score interface and built-in scorers.
 - [`docs/real_world_validation.md`](docs/real_world_validation.md) — live
   runs against real local tool-calling models, what broke, what was fixed.
+- [`docs/known_issues.md`](docs/known_issues.md) — tracked, real gaps that
+  are open or only partially mitigated, stated plainly.
 
 ## Roadmap
 
