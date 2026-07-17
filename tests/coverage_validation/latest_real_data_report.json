@@ -1,0 +1,13 @@
+{
+  "scenario": "real_bfcl_live_calls",
+  "data_source": "ShishirPatil/gorilla berkeley-function-call-leaderboard BFCL_v4_live_simple (Apache-2.0)",
+  "pool_size": 258,
+  "alpha": 0.1,
+  "n_calibration": 150,
+  "n_trials": 100,
+  "target_coverage": 0.9,
+  "mean_observed_coverage": 0.8986,
+  "theoretical_band_low": 0.8484,
+  "theoretical_band_high": 0.9429,
+  "within_exact_band": true
+}
