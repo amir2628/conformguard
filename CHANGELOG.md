@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.1 — 2026-07-17
+
+Bug fix, no API or behavior change.
+
+- `__init__.py`: `__version__` was a hardcoded string that fell out of
+  sync with `pyproject.toml`'s declared version during the 0.2.0 bump
+  (reported 0.1.0 after a fresh `pip install -e .` of 0.2.0). Now derived
+  from installed package metadata via
+  `importlib.metadata.version("conformguard")`, so it always reflects
+  whatever's actually installed and can't drift again at the next
+  release.
+- `tests/unit/test_version.py`: new regression test asserting
+  `conformguard.__version__` matches the `version` declared in
+  `pyproject.toml`, parsed directly from the file rather than round-tripped
+  through the same metadata `__version__` now reads from.
+
 ## 0.2.0 — 2026-07-17
 
 Real-world validation against live, locally-running tool-calling models

@@ -6,6 +6,8 @@ confidence threshold. See docs/guarantee_scope.md for exactly what is,
 and is not, guaranteed.
 """
 
+from importlib.metadata import version as _version
+
 from conformguard.core.calibration import (
     Calibrator,
     CalibrationScoringError,
@@ -35,7 +37,7 @@ from conformguard.storage.calibration_store import (
     LabelingSource,
 )
 
-__version__ = "0.1.0"
+__version__ = _version("conformguard")
 
 __all__ = [
     "AbstainedError",
