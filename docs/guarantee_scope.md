@@ -157,12 +157,27 @@ same data rendered as tables in the top-level README).
 
 The one open question this library does not attempt to close in Phase 1:
 whether any coverage guarantee can be established for a variable-length,
-multi-step agent trajectory (as opposed to a single call). Prior art
-either doesn't test this claim (PASC's own experiments stop at fixed `K`)
-or depends on an unverifiable latent-hazard-rate assumption (TRACER's
-Theorem A.8 depends on an assumption about a quantity that cannot be
-empirically checked, unlike exchangeability). Any future trajectory-level
-module in this codebase must carry its own explicit warning that its
-coverage numbers, if any, are empirical observations, not a mathematical
-bound, until and unless a real theorem is proven and reviewed the same way
-this document's claims were.
+multi-step agent trajectory (as opposed to a single call). Prior art was
+checked directly, not just assumed absent:
+
+- PASC's own abstract asserts its max-nonconformity-score reduction
+  extends to "agent pipelines," but its experiments never test this —
+  they stop at a fixed, known `K` of simultaneous checks on one call,
+  the same scope this library's Phase 2 already covers.
+- TRACER (arXiv:2602.11409) was investigated specifically because it
+  claims a trajectory-level guarantee, and found not to provide one.
+  It is not conformal in the first place — its central object is a
+  ranking/detection metric, not a calibrated nonconformity score — and
+  its stated bound (Theorem A.8) depends on Assumption A.6
+  (`λ_t ≤ c·r_t`), a claim about a *latent, unobservable* hazard rate.
+  Unlike exchangeability, which can be sanity-checked empirically (e.g.
+  via permutation tests on held-out data), this assumption cannot be
+  checked against any observable quantity, so the "guarantee" built on
+  top of it cannot itself be verified. That's a structural gap, not a
+  minor caveat, and it's why TRACER is not cited anywhere in this
+  codebase as a source of a real bound.
+
+Any future trajectory-level module in this codebase must carry its own
+explicit warning that its coverage numbers, if any, are empirical
+observations, not a mathematical bound, until and unless a real theorem
+is proven and reviewed the same way this document's claims were.

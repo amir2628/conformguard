@@ -291,6 +291,8 @@ conformguard threshold --alpha 0.05 --store .conformguard/calibration.db
 conformguard coverage-check --alpha 0.05 --calibration-size 1000 --store .conformguard/calibration.db
 conformguard multi-check-threshold --data calibration.json --alpha 0.1
 conformguard multi-check-coverage-check --data calibration.json --alpha 0.1 --calibration-size 1000 --compare
+# --bad-data enables the bad-rejection efficiency metric alongside good-call coverage
+conformguard multi-check-coverage-check --data calibration.json --bad-data bad_calibration.json --alpha 0.1 --calibration-size 1000 --compare
 ```
 
 ## Development
@@ -320,7 +322,9 @@ pytest tests/negative_controls                 # required before any release
 Phase 1 is the single-call calibration engine described above. Phase 2,
 multi-check joint calibration (PASC's max-nonconformity-score reduction),
 is also built — see the section above. Phase 3 (stretch) adds
-instance-adaptive risk levels. Phase 4, if it happens, is an explicitly
+instance-adaptive risk levels — real split-conformal math, extended with
+a second, policy-tuned abstain threshold per instance (CAP, Tayebati et
+al., arXiv:2502.06884). Phase 4, if it happens, is an explicitly
 experimental, no-guarantee-claimed research module investigating
 trajectory-level coverage — see `docs/guarantee_scope.md`'s closing
 section for why that's a genuinely open problem, not just unimplemented.
