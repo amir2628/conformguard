@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-07-17
 
 Real-world validation against live, locally-running tool-calling models
 (Ollama), not just synthetic/recorded data. See
@@ -92,12 +92,28 @@ Phase 2, multi-check joint calibration (PROJECT_SPEC §3 Phase 2 / §4.4):
   `logprob_confidence` fails alone) confirming `failed_checks` correctly
   attributes an abstain to a single check rather than reporting an opaque
   "something failed" — see `docs/real_world_validation.md`'s Round 3.
-- `cli/main.py`: documented (in the command's own `--help` text and in
-  `docs/architecture.md`) that `multi-check-coverage-check --compare`
-  currently reports only good-call coverage per method, not the
-  bad-rejection efficiency metric `validation/multi_check_comparison.py`
-  also computes — there's no CLI-level way yet to supply a separate
-  bad/anomalous pool.
+- `cli/main.py`: `multi-check-coverage-check --compare` gained an
+  optional `--bad-data` file (mirroring
+  `run_multi_check_comparison()`'s existing `bad_pool` parameter), so it
+  now reports each method's actual bad-rejection efficiency metric
+  alongside good-call coverage instead of good-call coverage alone.
+  Validates that `--bad-data`'s check names match `--data`'s. Without
+  `--bad-data`, the command still runs but prints an explicit warning
+  that the efficiency metric is being omitted, rather than silently
+  reporting a partial comparison. 3 new tests.
+- `docs/known_issues.md`: new file tracking real, open gaps that were
+  previously only noted in docstrings or commit messages — currently the
+  Command R7B / phi4-mini tool-call-production failures and the Phase 2
+  multi-check JSON-file storage stopgap described above.
+- Extended real-world validation to a live 4-model side-by-side
+  comparison (Qwen2.5 7B, Llama 3.1 8B, Mistral Nemo, Hermes 3 — Phi-4
+  Mini was tried first and dropped after failing the same smoke test as
+  Command R7B) of joint (K=2) calibration, each with its own calibrated
+  threshold. Surfaced a one-check-only split reappearing on a different
+  model (Hermes 3), a new tool-call-as-text quirk on Hermes 3, and an
+  honest finding that smaller calibration samples produced more abstains
+  on ordinary, non-adversarial prompts. See `docs/real_world_validation.md`
+  Round 4 for the full write-up, including the phi4-mini failure.
 
 ## 0.1.0 — Phase 1
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "conformguard"
-version = "0.1.0"
+version = "0.2.0"
 description = "Calibrated accept / abstain-and-escalate decisions for agent tool calls, backed by split conformal prediction's finite-sample coverage guarantee."
 readme = "README.md"
 license = "Apache-2.0"
