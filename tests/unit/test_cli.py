@@ -212,6 +212,78 @@ class TestMultiCheckCoverageCheck:
         assert "naive:" in result.output
         assert "bonferroni:" in result.output
 
+    def test_compare_without_bad_data_warns_and_omits_rejection_rate(self, tmp_path):
+        data_path = tmp_path / "multi_check.json"
+        _write_multi_check_data(data_path, n=2000)
+        result = runner.invoke(
+            app,
+            [
+                "multi-check-coverage-check",
+                "--data",
+                str(data_path),
+                "--alpha",
+                "0.1",
+                "--calibration-size",
+                "1000",
+                "--seed",
+                "0",
+                "--compare",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "no --bad-data supplied" in result.output
+        assert "bad-rejection rate" not in result.output
+
+    def test_compare_with_bad_data_reports_rejection_rate(self, tmp_path):
+        data_path = tmp_path / "multi_check.json"
+        bad_data_path = tmp_path / "bad_multi_check.json"
+        _write_multi_check_data(data_path, n=2000)
+        _write_multi_check_data(bad_data_path, n=500, seed=99)
+        result = runner.invoke(
+            app,
+            [
+                "multi-check-coverage-check",
+                "--data",
+                str(data_path),
+                "--bad-data",
+                str(bad_data_path),
+                "--alpha",
+                "0.1",
+                "--calibration-size",
+                "1000",
+                "--seed",
+                "0",
+                "--compare",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "bad pool size: 500" in result.output
+        assert "mean bad-rejection rate=" in result.output
+        # all three methods should report the metric
+        assert result.output.count("mean bad-rejection rate=") == 3
+
+    def test_bad_data_with_mismatched_check_names_exits_nonzero(self, tmp_path):
+        data_path = tmp_path / "multi_check.json"
+        bad_data_path = tmp_path / "bad_multi_check.json"
+        _write_multi_check_data(data_path, n=2000, k_names=("check_a", "check_b"))
+        _write_multi_check_data(bad_data_path, n=500, k_names=("check_x", "check_y"))
+        result = runner.invoke(
+            app,
+            [
+                "multi-check-coverage-check",
+                "--data",
+                str(data_path),
+                "--bad-data",
+                str(bad_data_path),
+                "--alpha",
+                "0.1",
+                "--calibration-size",
+                "1000",
+                "--compare",
+            ],
+        )
+        assert result.exit_code == 1
+
     def test_insufficient_pool_exits_nonzero(self, tmp_path):
         data_path = tmp_path / "small.json"
         _write_multi_check_data(data_path, n=10)

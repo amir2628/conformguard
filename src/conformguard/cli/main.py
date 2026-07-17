@@ -244,11 +244,15 @@ def multi_check_coverage_check(
     trials: int = typer.Option(100, help="Number of repeated calibration/test splits (R)."),
     seed: int | None = typer.Option(None, help="Random seed for reproducible splits."),
     compare: bool = typer.Option(
-        False,
-        help="Also run naive-independent and Bonferroni for comparison (PROJECT_SPEC §3 Phase 2). "
-        "NOTE: --compare currently reports only good-call coverage, not the bad-rejection "
-        "efficiency metric (validation/multi_check_comparison.py's other metric) -- there is no "
-        "CLI-level way yet to supply a separate bad/anomalous pool.",
+        False, help="Also run naive-independent and Bonferroni for comparison (PROJECT_SPEC §3 Phase 2)."
+    ),
+    bad_data: Path | None = typer.Option(
+        None,
+        help="Path to a JSON file of bad/anomalous score records, same {\"scores\": ..., \"outcome\": ...} "
+        "format as --data (the \"outcome\" field is ignored for this file -- every record's scores are "
+        "used as-is). Only meaningful with --compare: enables the bad-rejection efficiency metric "
+        "(validation/multi_check_comparison.py's mean_bad_rejection_rate) alongside good-call coverage. "
+        "Without --bad-data, --compare reports good-call coverage only.",
     ),
 ) -> None:
     """Run the empirical coverage validation suite for joint multi-check calibration."""
@@ -265,6 +269,18 @@ def multi_check_coverage_check(
         )
         raise typer.Exit(code=1)
 
+    bad_matrix = None
+    if bad_data is not None:
+        bad_check_names, bad_matrix, _bad_outcomes = _load_multi_check_data(bad_data)
+        if bad_check_names != check_names:
+            typer.secho(
+                f"--bad-data declares checks {bad_check_names}, but --data declares {check_names} -- "
+                f"both files must use the same K check names in the same order",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
     if not compare:
         from conformguard.validation.coverage_check import run_coverage_validation as _run
 
@@ -278,13 +294,24 @@ def multi_check_coverage_check(
         return
 
     results = run_multi_check_comparison(
-        good_matrix, alpha=alpha, calibration_size=calibration_size, n_trials=trials, seed=seed
+        good_matrix, alpha=alpha, calibration_size=calibration_size, n_trials=trials, seed=seed, bad_pool=bad_matrix
     )
     typer.echo(f"pool size: {good_matrix.shape[0]}  k={len(check_names)}  trials: {trials}  alpha: {alpha}")
+    if bad_matrix is not None:
+        typer.echo(f"bad pool size: {bad_matrix.shape[0]}")
+    else:
+        typer.secho(
+            "no --bad-data supplied: reporting good-call coverage only, not the bad-rejection "
+            "efficiency metric",
+            fg=typer.colors.YELLOW,
+        )
     typer.echo()
     for name in ("joint", "naive", "bonferroni"):
         result = results[name]
-        typer.echo(f"{name}: mean good-call coverage={result.mean_good_coverage:.4f} (target={1 - alpha:.4f})")
+        line = f"{name}: mean good-call coverage={result.mean_good_coverage:.4f} (target={1 - alpha:.4f})"
+        if result.mean_bad_rejection_rate is not None:
+            line += f"  mean bad-rejection rate={result.mean_bad_rejection_rate:.4f}"
+        typer.echo(line)
 
 
 def main() -> None:

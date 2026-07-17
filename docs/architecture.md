@@ -121,11 +121,11 @@ one baked into the `Calibrator` at calibration time.
   `multi-check-threshold` and `multi-check-coverage-check`, operating on
   a JSON calibration-data file rather than the SQLite store (which has no
   schema yet for "these K rows are simultaneous checks on one call" --
-  see the `multi_check.py` section above). `multi-check-coverage-check
-  --compare` currently reports only good-call coverage for each method,
-  not the bad-rejection efficiency metric that
-  `validation/multi_check_comparison.py` also computes, since there's no
-  CLI-level way yet to supply a separate bad/anomalous pool.
+  see the `multi_check.py` section above and `docs/known_issues.md`).
+  `multi-check-coverage-check --compare` accepts an optional `--bad-data`
+  file (same record format as `--data`) to also report each method's
+  bad-rejection efficiency metric alongside good-call coverage; without
+  it, only good-call coverage is reported.
 
 ## Why the calibration set is restricted to `outcome=True`
 
