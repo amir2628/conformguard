@@ -142,3 +142,72 @@ def run_negative_control(
         mean_observed_coverage=float(np.mean(observed)),
         band=band,
     )
+
+
+def run_multi_check_negative_control(
+    good_pool: np.ndarray,
+    alpha: float,
+    calibration_size: int,
+    shift_column: int,
+    shift_fn: ShiftFn,
+    n_trials: int = 100,
+    seed: int | None = None,
+) -> NegativeControlResult:
+    """Like run_negative_control, but for joint (max-score) multi-check calibration.
+
+    Unlike test_multi_check_exchangeability_violation_detected.py's first
+    version (which shifted the already-max-reduced 1-D score -- a
+    different, weaker check), this operates on the K-dimensional pool
+    directly: on each trial, the calibration set's max-scores are computed
+    from the UNSHIFTED K-dimensional calibration rows; the disjoint test
+    set has ONLY column ``shift_column`` shifted (via ``shift_fn``)
+    *before* taking the row-wise max, leaving the other K-1 checks
+    untouched. This tests specifically whether a single check drifting
+    out of distribution -- while the others stay exchangeable -- is still
+    caught by the joint coverage-validation machinery, rather than being
+    diluted away by the other, still-exchangeable checks in the max.
+
+    Args:
+        good_pool: shape (N, K) array of known-good nonconformity score
+            vectors.
+        shift_column: index (0-based) of the single check to shift in the
+            test set only.
+        shift_fn: applied to that one column's test-set values (same
+            shift functions as run_negative_control: constant_shift,
+            distribution_swap, no_shift).
+    """
+    n_pool, k = good_pool.shape
+    if not 0 <= shift_column < k:
+        raise ValueError(f"shift_column must be in [0, {k}), got {shift_column}")
+    if calibration_size <= 0 or calibration_size >= n_pool:
+        raise ValueError(
+            f"calibration_size must leave a non-empty test set: got calibration_size="
+            f"{calibration_size} against a pool of {n_pool}"
+        )
+    if n_trials < 1:
+        raise ValueError(f"n_trials must be >= 1, got {n_trials}")
+
+    rng = np.random.default_rng(seed)
+    observed: list[float] = []
+
+    for _ in range(n_trials):
+        permuted = rng.permutation(n_pool)
+        cal = good_pool[permuted[:calibration_size]]
+        test = good_pool[permuted[calibration_size:]].copy()
+
+        q_hat = conformal_quantile(cal.max(axis=1).tolist(), alpha=alpha)
+
+        test[:, shift_column] = shift_fn(test[:, shift_column], rng)
+        covered = np.mean(test.max(axis=1) <= q_hat)
+        observed.append(float(covered))
+
+    band = theoretical_coverage_band(n=calibration_size, alpha=alpha)
+
+    return NegativeControlResult(
+        alpha=alpha,
+        n_calibration=calibration_size,
+        n_trials=n_trials,
+        observed_coverages=tuple(observed),
+        mean_observed_coverage=float(np.mean(observed)),
+        band=band,
+    )

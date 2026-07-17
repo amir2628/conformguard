@@ -117,7 +117,15 @@ one baked into the `Calibrator` at calibration time.
   completion rather than just the argument tokens.
 - **`cli/main.py`** — `inspect`, `threshold`, `coverage-check` commands
   over a calibration store, for introspecting stored data and re-running
-  the coverage proof against it without writing a script.
+  the coverage proof against it without writing a script. Phase 2 adds
+  `multi-check-threshold` and `multi-check-coverage-check`, operating on
+  a JSON calibration-data file rather than the SQLite store (which has no
+  schema yet for "these K rows are simultaneous checks on one call" --
+  see the `multi_check.py` section above). `multi-check-coverage-check
+  --compare` currently reports only good-call coverage for each method,
+  not the bad-rejection efficiency metric that
+  `validation/multi_check_comparison.py` also computes, since there's no
+  CLI-level way yet to supply a separate bad/anomalous pool.
 
 ## Why the calibration set is restricted to `outcome=True`
 

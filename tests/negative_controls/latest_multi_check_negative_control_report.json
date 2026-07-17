@@ -1,0 +1,32 @@
+[
+  {
+    "rho": 0.0,
+    "alpha": 0.1,
+    "k": 3,
+    "shift_column": 1,
+    "no_shift_mean_coverage": 0.9003,
+    "no_shift_degraded": false,
+    "shifted_mean_coverage": 0.0,
+    "shifted_degraded": true
+  },
+  {
+    "rho": 0.5,
+    "alpha": 0.1,
+    "k": 3,
+    "shift_column": 1,
+    "no_shift_mean_coverage": 0.9013,
+    "no_shift_degraded": false,
+    "shifted_mean_coverage": 0.0,
+    "shifted_degraded": true
+  },
+  {
+    "rho": 0.9,
+    "alpha": 0.1,
+    "k": 3,
+    "shift_column": 1,
+    "no_shift_mean_coverage": 0.901,
+    "no_shift_degraded": false,
+    "shifted_mean_coverage": 0.0,
+    "shifted_degraded": true
+  }
+]

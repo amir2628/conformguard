@@ -1,0 +1,68 @@
+[
+  {
+    "rho": 0.0,
+    "alpha": 0.1,
+    "k": 3,
+    "n_calibration": 1000,
+    "n_trials": 100,
+    "mean_observed_coverage": 0.9003,
+    "theoretical_band_low": 0.8808,
+    "theoretical_band_high": 0.9179,
+    "within_band": true
+  },
+  {
+    "rho": 0.0,
+    "alpha": 0.05,
+    "k": 3,
+    "n_calibration": 1000,
+    "n_trials": 100,
+    "mean_observed_coverage": 0.9491,
+    "theoretical_band_low": 0.9357,
+    "theoretical_band_high": 0.9627,
+    "within_band": true
+  },
+  {
+    "rho": 0.5,
+    "alpha": 0.1,
+    "k": 3,
+    "n_calibration": 1000,
+    "n_trials": 100,
+    "mean_observed_coverage": 0.9013,
+    "theoretical_band_low": 0.8808,
+    "theoretical_band_high": 0.9179,
+    "within_band": true
+  },
+  {
+    "rho": 0.5,
+    "alpha": 0.05,
+    "k": 3,
+    "n_calibration": 1000,
+    "n_trials": 100,
+    "mean_observed_coverage": 0.9509,
+    "theoretical_band_low": 0.9357,
+    "theoretical_band_high": 0.9627,
+    "within_band": true
+  },
+  {
+    "rho": 0.9,
+    "alpha": 0.1,
+    "k": 3,
+    "n_calibration": 1000,
+    "n_trials": 100,
+    "mean_observed_coverage": 0.901,
+    "theoretical_band_low": 0.8808,
+    "theoretical_band_high": 0.9179,
+    "within_band": true
+  },
+  {
+    "rho": 0.9,
+    "alpha": 0.05,
+    "k": 3,
+    "n_calibration": 1000,
+    "n_trials": 100,
+    "mean_observed_coverage": 0.9508,
+    "theoretical_band_low": 0.9357,
+    "theoretical_band_high": 0.9627,
+    "within_band": true
+  }
+]

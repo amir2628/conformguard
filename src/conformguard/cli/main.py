@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
+
+if TYPE_CHECKING:
+    import numpy as np
 
 from conformguard.core.quantile import conformal_quantile
 from conformguard.storage.calibration_store import (
@@ -14,6 +19,7 @@ from conformguard.storage.calibration_store import (
     CalibrationStore,
 )
 from conformguard.validation.coverage_check import run_coverage_validation
+from conformguard.validation.multi_check_comparison import run_multi_check_comparison
 
 app = typer.Typer(
     name="conformguard",
@@ -149,6 +155,136 @@ def coverage_check(
     status = "WITHIN BAND" if result.within_band else "OUTSIDE BAND"
     color = typer.colors.GREEN if result.within_band else typer.colors.RED
     typer.secho(status, fg=color, bold=True)
+
+
+def _load_multi_check_data(path: Path) -> tuple[list[str], "np.ndarray", list[bool]]:
+    """Load Phase 2 multi-check calibration data from a JSON file.
+
+    Expected shape: a list of records, each
+    ``{"scores": {"<check_name>": <float>, ...}, "outcome": <bool>}``.
+    All records must declare the same set of check names. Returns
+    (sorted check names, an (N, K) score matrix in that column order,
+    outcome flags) -- this JSON format, not the SQLite calibration store,
+    is Phase 2's calibration-data interchange for now: the store's schema
+    is one score per row with no notion of "these K rows are simultaneous
+    checks on the same call," and retrofitting that grouping is a
+    real, separate piece of storage-layer work this CLI extension
+    deliberately does not take on speculatively.
+    """
+    import numpy as np
+
+    if not path.exists():
+        typer.secho(f"no multi-check data file found at {path}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    records = json.loads(path.read_text())
+    if not records:
+        typer.secho(f"{path} contains no records", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    check_names = sorted(records[0]["scores"])
+    for i, record in enumerate(records):
+        if sorted(record["scores"]) != check_names:
+            typer.secho(
+                f"record {i} declares checks {sorted(record['scores'])}, expected {check_names} "
+                f"(all records must declare the same set of check names)",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+    matrix = np.array([[record["scores"][name] for name in check_names] for record in records], dtype=float)
+    outcomes = [bool(record["outcome"]) for record in records]
+    return check_names, matrix, outcomes
+
+
+@app.command(name="multi-check-threshold")
+def multi_check_threshold(
+    data: Path = typer.Option(..., help="Path to a JSON file of multi-check calibration records."),
+    alpha: float = typer.Option(..., help="Target joint miscoverage rate, in (0, 1)."),
+) -> None:
+    """Compute the joint (max-score) threshold and print a per-check breakdown.
+
+    The per-check breakdown reports each check's own marginal quantile at
+    the same alpha (for context) and how often each check was the
+    "binding" one -- i.e. the max -- among the good-outcome calibration
+    examples, which is a diagnostic for which check is actually driving
+    the joint threshold.
+    """
+    import numpy as np
+
+    check_names, matrix, outcomes = _load_multi_check_data(data)
+    good_matrix = matrix[np.array(outcomes)]
+    if good_matrix.shape[0] == 0:
+        typer.secho("no good-outcome (outcome=true) records in the data file", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    max_scores = good_matrix.max(axis=1).tolist()
+    q_hat = conformal_quantile(max_scores, alpha=alpha)
+
+    typer.echo(f"n={good_matrix.shape[0]}  k={len(check_names)}  alpha={alpha}  q_hat(joint)={q_hat}")
+    typer.echo()
+    typer.echo("per-check breakdown:")
+    binding_counts = np.argmax(good_matrix, axis=1)
+    for j, name in enumerate(check_names):
+        marginal_q = conformal_quantile(good_matrix[:, j].tolist(), alpha=alpha)
+        binding_fraction = float(np.mean(binding_counts == j))
+        typer.echo(
+            f"  {name!r}: min={good_matrix[:, j].min():.4f} max={good_matrix[:, j].max():.4f} "
+            f"mean={good_matrix[:, j].mean():.4f}  own-marginal-q_hat(alpha={alpha})={marginal_q:.4f}  "
+            f"was-the-max-in={binding_fraction:.1%} of examples"
+        )
+
+
+@app.command(name="multi-check-coverage-check")
+def multi_check_coverage_check(
+    data: Path = typer.Option(..., help="Path to a JSON file of multi-check calibration records."),
+    alpha: float = typer.Option(..., help="Target joint miscoverage rate, in (0, 1)."),
+    calibration_size: int = typer.Option(..., help="Calibration set size to use for each repeated split."),
+    trials: int = typer.Option(100, help="Number of repeated calibration/test splits (R)."),
+    seed: int | None = typer.Option(None, help="Random seed for reproducible splits."),
+    compare: bool = typer.Option(
+        False,
+        help="Also run naive-independent and Bonferroni for comparison (PROJECT_SPEC §3 Phase 2). "
+        "NOTE: --compare currently reports only good-call coverage, not the bad-rejection "
+        "efficiency metric (validation/multi_check_comparison.py's other metric) -- there is no "
+        "CLI-level way yet to supply a separate bad/anomalous pool.",
+    ),
+) -> None:
+    """Run the empirical coverage validation suite for joint multi-check calibration."""
+    import numpy as np
+
+    check_names, matrix, outcomes = _load_multi_check_data(data)
+    good_matrix = matrix[np.array(outcomes)]
+    if good_matrix.shape[0] <= calibration_size:
+        typer.secho(
+            f"pool has only {good_matrix.shape[0]} good-outcome examples, which does not leave a "
+            f"non-empty test set for calibration_size={calibration_size}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if not compare:
+        from conformguard.validation.coverage_check import run_coverage_validation as _run
+
+        max_scores = good_matrix.max(axis=1).tolist()
+        result = _run(max_scores, alpha=alpha, calibration_size=calibration_size, n_trials=trials, seed=seed)
+        typer.echo(f"pool size: {good_matrix.shape[0]}  k={len(check_names)}  trials: {result.n_trials}")
+        typer.echo(f"mean observed joint coverage: {result.mean_observed_coverage:.4f}")
+        typer.echo(f"theoretical band ({result.band.confidence:.0%} CI): [{result.band.low:.4f}, {result.band.high:.4f}]")
+        status = "WITHIN BAND" if result.within_band else "OUTSIDE BAND"
+        typer.secho(status, fg=(typer.colors.GREEN if result.within_band else typer.colors.RED), bold=True)
+        return
+
+    results = run_multi_check_comparison(
+        good_matrix, alpha=alpha, calibration_size=calibration_size, n_trials=trials, seed=seed
+    )
+    typer.echo(f"pool size: {good_matrix.shape[0]}  k={len(check_names)}  trials: {trials}  alpha: {alpha}")
+    typer.echo()
+    for name in ("joint", "naive", "bonferroni"):
+        result = results[name]
+        typer.echo(f"{name}: mean good-call coverage={result.mean_good_coverage:.4f} (target={1 - alpha:.4f})")
 
 
 def main() -> None:

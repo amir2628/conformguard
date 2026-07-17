@@ -471,3 +471,72 @@ hedging span either aggregation method could capture or miss.
   is itself sensitive to how the ambiguous prompt is worded.
 - A hosted provider (still not tested in any round) — see round 1 §7.
 
+## Round 3: live validation of Phase 2 (multi-check joint calibration)
+
+**Directly observed.** `examples/ollama_multi_check_demo.py` runs the same
+two real signals as round 1's single-check demo (`schema_gate`,
+`logprob_confidence`) against live `qwen2.5:7b`, but calibrates them
+jointly via `core/multi_check.py`'s max-nonconformity-score reduction
+instead of combining them by hand into one composite number. Two full
+live runs so far, each with a freshly harvested calibration set (K=2,
+alpha=0.1); numbers below are from the more recent one (146 good
+examples, q_hat=0.0010):
+
+- Five ordinary prompts (Berlin, Tokyo, Cairo, Vancouver, Buenos Aires):
+  accepted, both checks passing each time.
+- The garbled-city-string prompt: `schema_gate` and `logprob_confidence`
+  both failed together (1.0000 and 0.0126) -- an abstain, but one that
+  doesn't exercise `failed_checks`' real value, since it doesn't say
+  which check would have mattered on its own.
+- The SQL-injection-style prompt: in the run reported in round 1, this
+  produced a malformed tool call that both checks correctly rejected; in
+  this run, the model instead declined to call the tool at all
+  (`finish_reason="stop"`, empty content) -- real, observed
+  run-to-run variance in the same model given the same prompt, handled
+  gracefully by the demo (it just reports "model did NOT call a tool"
+  and moves on) rather than being a bug.
+
+**A genuine one-check-only split, found and added to the live run on
+request** (both abstains above failed on *both* checks simultaneously,
+which doesn't test whether `failed_checks` correctly attributes an
+abstain to a single specific check). Search strategy: reuse round 2's
+finding that ambiguous prompts sometimes make Qwen hedge in visible prose
+before guessing a real, schema-valid city -- schema-valid input, but
+exactly the kind of input that should stress `logprob_confidence` in
+isolation. Six live trials of two round-2 hedging prompts against the
+calibrated threshold immediately produced multiple real splits, e.g.:
+
+```
+args={'city': 'Aarhus'}     schema_gate=0.0000(PASS)  logprob_confidence=0.4221(FAIL)  -> abstain
+args={'city': 'Amsterdam'}  schema_gate=0.0000(PASS)  logprob_confidence=0.3321(FAIL)  -> abstain
+args={'city': 'Alexandria'} schema_gate=0.0000(PASS)  logprob_confidence=0.3050(FAIL)  -> abstain
+args={'city': 'Cairo'}      schema_gate=0.0000(PASS)  logprob_confidence=0.2232(FAIL)  -> abstain
+```
+
+The prompt "Weather check for the city I'm thinking of -- it's a European
+capital, starts with a vowel maybe? Not sure." was added to
+`LIVE_PROMPTS` and re-run as part of the full live demo (not a cherry-picked
+one-off): the model guessed `{"city": "Paris"}`, a clean, schema-valid
+name --
+
+```
+per-check breakdown:
+  [PASS] schema_gate: score=0.0000 errored=False
+  [FAIL] logprob_confidence: score=0.5435 errored=False
+DECISION: ABSTAIN
+failed checks: ('logprob_confidence',)
+```
+
+-- `failed_checks` correctly returns exactly `('logprob_confidence',)`,
+not both. This would not have been possible to demonstrate through the
+Phase 1 single-composite-score demo, which only ever reports one opaque
+number; the per-check breakdown is what makes this attribution visible.
+Same caveat as round 2's aggregation finding: this is a real, repeatable
+result on this specific prompt style and model, not a claim that every
+abstain will cleanly attribute to one check.
+
+This exercises `calibrate_multi_check()`/`decide_multi_check()` directly,
+not through `ToolRegistry` -- Phase 2's scope (PROJECT_SPEC §3 Phase 2)
+is the calibration/decision layer only, with no `wrap()`-style engine
+integration requested or built yet, so the demo calls the underlying tool
+explicitly on accept rather than through the adapter.

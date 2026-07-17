@@ -54,6 +54,51 @@ robustness gap this exposed regardless of the specific root cause:
 - 31 new tests, including a reproduction against the actual real response
   captured live from the failing model.
 
+Phase 2, multi-check joint calibration (PROJECT_SPEC §3 Phase 2 / §4.4):
+- `core/multi_check.py`: `calibrate_multi_check()` / `decide_multi_check()`
+  support K simultaneous nonconformity checks on one call, calibrated
+  jointly via PASC's max-nonconformity-score reduction (arXiv:2605.18812,
+  Theorem 6) — a single q_hat over `max(s_1, ..., s_K)` gives
+  `P(all K checks pass) >= 1 - alpha`. Verified against a hand-computed
+  toy example (K=2, n=5).
+- `validation/multi_check_comparison.py`: comparison harness against (a)
+  naive independent per-check calibration (shown invalid: good-call
+  coverage below target) and (b) Bonferroni correction, replicating
+  PASC's own methodology on this project's tool-calling domain. Good-call
+  acceptance rate was tried first as the efficiency metric and found
+  actively misleading (Bonferroni's acceptance rate climbs above its own
+  target as check correlation increases, which looks like an advantage
+  but reflects a looser, less discriminating threshold); rejection rate
+  on a held-out bad/anomalous pool is the corrected metric, and shows
+  joint's efficiency advantage over Bonferroni growing with correlation,
+  as PASC predicts.
+- `cli/main.py`: `multi-check-threshold` and `multi-check-coverage-check`
+  commands, operating on a JSON calibration-data file (the SQLite
+  calibration store's one-score-per-row schema has no notion of "these K
+  rows are simultaneous checks on one call" yet; retrofitting that
+  grouping is separate, not-yet-started storage work).
+- Full unit, empirical-coverage, and negative-control tests, same rigor
+  as Phase 1 — including a negative control that shifts a SINGLE check's
+  test-time distribution (not the already-reduced max score), confirming
+  the other K-1 healthy checks don't mask one check's drift.
+- PROJECT_SPEC.md §8a: Phase 2 acceptance criteria added and checked
+  against what's built (local planning doc, not shipped with the
+  package).
+- `examples/ollama_multi_check_demo.py`: live end-to-end run of joint
+  multi-check calibration against a local Ollama model, calibrating the
+  same two real signals as the Phase 1 demo jointly instead of combining
+  them by hand into one composite score. Real harvested calibration data,
+  including a genuine one-check-only split (`schema_gate` passes,
+  `logprob_confidence` fails alone) confirming `failed_checks` correctly
+  attributes an abstain to a single check rather than reporting an opaque
+  "something failed" — see `docs/real_world_validation.md`'s Round 3.
+- `cli/main.py`: documented (in the command's own `--help` text and in
+  `docs/architecture.md`) that `multi-check-coverage-check --compare`
+  currently reports only good-call coverage per method, not the
+  bad-rejection efficiency metric `validation/multi_check_comparison.py`
+  also computes — there's no CLI-level way yet to supply a separate
+  bad/anomalous pool.
+
 ## 0.1.0 — Phase 1
 
 Initial release: the core split-conformal calibration engine and
@@ -80,6 +125,6 @@ single-call accept/abstain decision.
 - Coverage validation suite run against both synthetic scenarios and a
   real, non-synthetic tool-call dataset (BFCL "live" split).
 
-Phase 2 (multi-check joint calibration), Phase 3 (adaptive thresholds),
-and Phase 4 (trajectory-level research module) are not yet started — see
-the Roadmap section of `README.md`.
+Phase 3 (adaptive thresholds) and Phase 4 (trajectory-level research
+module) are not yet started — see the Roadmap section of `README.md`.
+Phase 2 (multi-check joint calibration) is built; see above.

@@ -215,12 +215,73 @@ and actual response content attached) instead of silently returning
 nothing — this is not an abstain, since conformguard never saw a call to
 score in the first place.
 
+## Phase 2: multi-check joint calibration
+
+`core/multi_check.py` extends single-call calibration to `K` simultaneous
+nonconformity checks on one call (e.g. a schema-validity check + a
+model-confidence check + a semantic-similarity check), via PASC's
+max-nonconformity-score reduction (Kotte et al., arXiv:2605.18812,
+Theorem 6): a single threshold, computed over `max(s_1, ..., s_K)` across
+the calibration set, gives `P(ALL K checks pass) >= 1 - alpha` — a genuine
+joint guarantee, not `K` separate marginal ones.
+
+```python
+from conformguard.core.multi_check import calibrate_multi_check, decide_multi_check
+
+calibrator = calibrate_multi_check(
+    [schema_gate_scorer, logprob_confidence_scorer, semantic_similarity_scorer],
+    calibration_data=historical_calls,
+    alpha=0.1,
+)
+result = decide_multi_check(calibrator, context)
+result.decision          # "accept" | "abstain"
+result.failed_checks      # which check(s), if any, exceeded the joint threshold
+result.guarantee.text     # the joint, K-check-scoped guarantee statement
+```
+
+Compared against two alternatives with no/weaker joint guarantees (naive
+independent per-check calibration, and the conservative Bonferroni
+correction), replicating PASC's own comparison methodology on this
+project's tool-calling domain rather than citing their NER numbers.
+Validity (does each method meet its good-call coverage target) and
+efficiency (does it still reject bad/anomalous calls at the same target)
+are both measured — good-call coverage alone turned out to be a
+misleading efficiency proxy (see `validation/multi_check_comparison.py`'s
+module docstring) and was replaced with rejection rate on a held-out bad
+pool:
+
+| rho (check correlation) | naive good-coverage | joint bad-rejection | bonferroni bad-rejection |
+|---|---|---|---|
+| 0.0 (independent) | 0.730 (invalid) | 0.982 | 0.980 |
+| 0.5 | 0.783 (invalid) | 0.935 | 0.915 |
+| 0.9 (highly correlated) | 0.852 (invalid) | 0.889 | 0.812 |
+
+Naive is invalid throughout (its coverage never reaches the 0.9 target).
+Joint and Bonferroni are both valid, but joint's efficiency advantage over
+Bonferroni grows as the checks become more correlated — exactly PASC's
+predicted result, reproduced here rather than assumed. Also validated
+against a real, non-synthetic pool (two genuinely different deterministic
+scores computed from the same BFCL "live" calls used elsewhere in this
+README). Reproduce with `pytest tests/coverage_validation/test_multi_check_comparison.py -v`.
+
+Also validated live against a real, locally-running model:
+`examples/ollama_multi_check_demo.py` calibrates the same two real
+signals as the Phase 1 Ollama demo (a schema gate and a real logprob
+confidence score) jointly instead of combining them by hand. Includes a
+real one-check-only split — a schema-valid but hedged-into answer
+("Paris", guessed for an intentionally ambiguous prompt) that passes
+`schema_gate` but fails `logprob_confidence` alone, with `failed_checks`
+correctly attributing the abstain to that one check — see
+`docs/real_world_validation.md`'s Round 3.
+
 ## CLI
 
 ```
 conformguard inspect --store .conformguard/calibration.db
 conformguard threshold --alpha 0.05 --store .conformguard/calibration.db
 conformguard coverage-check --alpha 0.05 --calibration-size 1000 --store .conformguard/calibration.db
+conformguard multi-check-threshold --data calibration.json --alpha 0.1
+conformguard multi-check-coverage-check --data calibration.json --alpha 0.1 --calibration-size 1000 --compare
 ```
 
 ## Development
@@ -245,14 +306,13 @@ pytest tests/negative_controls                 # required before any release
 
 ## Roadmap
 
-Phase 1 (this release) is the single-call calibration engine described
-above. Phase 2 (planned) adds joint calibration across a fixed set of `K`
-simultaneous checks on one call (PASC's max-nonconformity-score
-reduction). Phase 3 (stretch) adds instance-adaptive risk levels. Phase 4,
-if it happens, is an explicitly experimental, no-guarantee-claimed
-research module investigating trajectory-level coverage — see
-`docs/guarantee_scope.md`'s closing section for why that's a genuinely
-open problem, not just unimplemented.
+Phase 1 is the single-call calibration engine described above. Phase 2,
+multi-check joint calibration (PASC's max-nonconformity-score reduction),
+is also built — see the section above. Phase 3 (stretch) adds
+instance-adaptive risk levels. Phase 4, if it happens, is an explicitly
+experimental, no-guarantee-claimed research module investigating
+trajectory-level coverage — see `docs/guarantee_scope.md`'s closing
+section for why that's a genuinely open problem, not just unimplemented.
 
 ## License
 

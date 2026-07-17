@@ -1,0 +1,57 @@
+{
+  "synthetic": [
+    {
+      "rho": 0.0,
+      "alpha": 0.1,
+      "k": 3,
+      "n_calibration": 1000,
+      "n_trials": 100,
+      "joint_mean_good_coverage": 0.9003,
+      "joint_mean_bad_rejection_rate": 0.9817,
+      "naive_mean_good_coverage": 0.7299,
+      "naive_mean_bad_rejection_rate": 0.9983,
+      "bonferroni_mean_good_coverage": 0.905,
+      "bonferroni_mean_bad_rejection_rate": 0.9802
+    },
+    {
+      "rho": 0.5,
+      "alpha": 0.1,
+      "k": 3,
+      "n_calibration": 1000,
+      "n_trials": 100,
+      "joint_mean_good_coverage": 0.9013,
+      "joint_mean_bad_rejection_rate": 0.9346,
+      "naive_mean_good_coverage": 0.7829,
+      "naive_mean_bad_rejection_rate": 0.9808,
+      "bonferroni_mean_good_coverage": 0.9211,
+      "bonferroni_mean_bad_rejection_rate": 0.9153
+    },
+    {
+      "rho": 0.9,
+      "alpha": 0.1,
+      "k": 3,
+      "n_calibration": 1000,
+      "n_trials": 100,
+      "joint_mean_good_coverage": 0.901,
+      "joint_mean_bad_rejection_rate": 0.8893,
+      "naive_mean_good_coverage": 0.8519,
+      "naive_mean_bad_rejection_rate": 0.9302,
+      "bonferroni_mean_good_coverage": 0.9474,
+      "bonferroni_mean_bad_rejection_rate": 0.8119
+    }
+  ],
+  "real": {
+    "data_source": "BFCL live_simple extract (Apache-2.0), 2 real deterministic scores; bad pool is a synthetic shift of the real good scores (see scenario module docstring)",
+    "pool_size": 258,
+    "alpha": 0.1,
+    "k": 2,
+    "n_calibration": 150,
+    "n_trials": 100,
+    "joint_mean_good_coverage": 1.0,
+    "joint_mean_bad_rejection_rate": 0.9942,
+    "naive_mean_good_coverage": 0.8913,
+    "naive_mean_bad_rejection_rate": 1.0,
+    "bonferroni_mean_good_coverage": 0.9974,
+    "bonferroni_mean_bad_rejection_rate": 0.9943
+  }
+}

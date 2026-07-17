@@ -14,6 +14,14 @@ from conformguard.core.calibration import (
 )
 from conformguard.core.decision import Decision, GuaranteeStatement, WrapResult, decide
 from conformguard.core.engine import AbstainedError, WrapCallResult, WrappedTool, wrap
+from conformguard.core.multi_check import (
+    CheckResult,
+    MultiCheckCalibrator,
+    MultiCheckGuaranteeStatement,
+    MultiCheckWrapResult,
+    calibrate_multi_check,
+    decide_multi_check,
+)
 from conformguard.core.scores import (
     NonconformityScore,
     ToolCallContext,
@@ -35,17 +43,23 @@ __all__ = [
     "CalibrationScoringError",
     "CalibrationStore",
     "Calibrator",
+    "CheckResult",
     "Decision",
     "GuaranteeStatement",
     "InsufficientCalibrationDataError",
     "LabelingSource",
+    "MultiCheckCalibrator",
+    "MultiCheckGuaranteeStatement",
+    "MultiCheckWrapResult",
     "NonconformityScore",
     "ToolCallContext",
     "WrapCallResult",
     "WrapResult",
     "WrappedTool",
     "calibrate",
+    "calibrate_multi_check",
     "decide",
+    "decide_multi_check",
     "logprob_score",
     "make_judge_score",
     "schema_validity_score",
