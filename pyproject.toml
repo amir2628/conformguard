@@ -14,13 +14,13 @@ authors = [
 ]
 keywords = [
     "conformal-prediction",
-    "agents",
+    "llm-agents",
     "tool-calling",
     "uncertainty-quantification",
     "llm",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
@@ -38,6 +38,12 @@ dependencies = [
     "scipy>=1.11",
     "typer>=0.12",
 ]
+
+[project.urls]
+Homepage = "https://github.com/amir2628/conformguard"
+Repository = "https://github.com/amir2628/conformguard"
+Issues = "https://github.com/amir2628/conformguard/issues"
+Documentation = "https://github.com/amir2628/conformguard/tree/main/docs"
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40"]
