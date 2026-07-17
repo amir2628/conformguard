@@ -78,6 +78,49 @@ Nonconformity = `1 - exp(model_logprob)`. Requires
 abstain) if it's missing. Useful when your model-calling code already
 surfaces token log-probabilities for the generated tool call.
 
+**`model_logprob` is usually not a single value you get for free — you
+have to aggregate it, and how you aggregate it matters.** Real
+OpenAI-compatible endpoints (verified directly against a local Ollama
+server, not assumed) return per-token logprobs for the *entire raw
+completion*, not one clean scalar attached to the tool call. If your
+provider wraps tool calls in text syntax (e.g. Ollama/Qwen's
+`<tool_call>...</tool_call>`), those wrapper and JSON-structure tokens are
+in that same per-token list alongside the actual argument value tokens.
+
+The empirically correct choice, checked against repeated live trials (see
+`docs/real_world_validation.md`), is to average over **the whole
+completion**, not just the tokens inside the function-call arguments.
+Restricting to argument-only tokens was tried and found to silently lose
+signal: when a model reasons or hedges in plain text before committing to
+an answer (e.g. guessing at an ambiguous request), that uncertainty shows
+up as low logprobs in the *reasoning* tokens — by the time the model
+writes its already-decided answer as a JSON string, it typically does so
+confidently regardless of how uncertain the decision leading up to it
+was. `integrations.raw_tool_loop.mean_completion_logprob(choice)` does
+this aggregation (whole-completion mean, provider-agnostic — it works
+against both SDK objects and raw JSON dicts) and is the supported way to
+turn a real chat-completion response into `logprob_score`'s expected
+input:
+
+```python
+from conformguard.integrations.raw_tool_loop import mean_completion_logprob
+
+response = client.chat.completions.create(..., logprobs=True, tools=[...])
+choice = response.choices[0]
+mean_logprob = mean_completion_logprob(choice)  # None if the server didn't return logprobs
+
+context = ToolCallContext(
+    tool_name="get_weather",
+    args=parsed_args,
+    metadata={"model_logprob": mean_logprob},
+)
+```
+
+If `mean_completion_logprob` returns `None` (server didn't return
+logprobs at all), don't substitute a fake value — let `logprob_score`
+raise on the missing key so it forces an abstain, per the "erroring
+scorer forces abstain" rule above.
+
 ### `make_judge_score`
 
 ```python

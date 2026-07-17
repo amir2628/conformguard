@@ -191,6 +191,20 @@ number:
 
 Reproduce with `pytest tests/negative_controls -v`.
 
+## Real-world validation
+
+The statistical proofs above run on synthetic and recorded data; separately,
+this library has also been driven end-to-end against real, locally-running
+tool-calling models (Qwen2.5, Llama 3.1, Mistral Nemo, Command R7B via
+Ollama) — real HTTP requests, real model-generated tool calls, real accept
+and abstain decisions with the full guarantee statement printed for each.
+That work surfaced a real gap (no channel existed for response-level
+scoring signal like per-completion logprobs) and a real, only
+partially-generalizing finding about how to aggregate a model's per-token
+logprobs into a single confidence score — both are written up in full,
+including what didn't hold up under a larger sample, in
+[`docs/real_world_validation.md`](docs/real_world_validation.md).
+
 ## CLI
 
 ```
@@ -216,6 +230,8 @@ pytest tests/negative_controls                 # required before any release
   rationale.
 - [`docs/writing_scorers.md`](docs/writing_scorers.md) — the nonconformity
   score interface and built-in scorers.
+- [`docs/real_world_validation.md`](docs/real_world_validation.md) — live
+  runs against real local tool-calling models, what broke, what was fixed.
 
 ## Roadmap
 

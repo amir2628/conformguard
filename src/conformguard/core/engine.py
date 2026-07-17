@@ -110,10 +110,30 @@ class WrappedTool:
 
     def __call__(self, *args: Any, **kwargs: Any) -> WrapCallResult:
         context = self._build_context(*args, **kwargs)
+        return self._decide_and_run(context, args, kwargs)
+
+    def call_with_context(self, context: ToolCallContext) -> WrapCallResult:
+        """Score and run the tool against an already-built ToolCallContext.
+
+        Bypasses context_builder entirely. Exists for callers that have
+        scoring-relevant signal that isn't part of the tool's own call
+        arguments -- for example, a per-response confidence/logprob value
+        that a real API attaches to the choice/response, not to the
+        individual tool-call block (see integrations/raw_tool_loop.py,
+        which uses this when an adapter caller supplies extra_metadata).
+        On accept, the underlying tool is still called with exactly
+        context.args as keyword arguments -- nothing about the "never
+        rewrite the tool" contract changes here.
+        """
+        return self._decide_and_run(context, (), context.args)
+
+    def _decide_and_run(
+        self, context: ToolCallContext, call_args: tuple[Any, ...], call_kwargs: dict[str, Any]
+    ) -> WrapCallResult:
         decision_result = decide(self.calibrator, context)
 
         if decision_result.decision is Decision.ACCEPT:
-            output = self.tool_fn(*args, **kwargs)
+            output = self.tool_fn(*call_args, **call_kwargs)
             return WrapCallResult._from_decision(decision_result, output=output)
 
         if self.on_abstain == "raise":

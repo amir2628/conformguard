@@ -130,3 +130,47 @@ class TestPositionalArgsRequireContextBuilder:
         with pytest.raises(TypeError):
             wrapped(5)
 
+
+class TestCallWithContext:
+    def test_bypasses_context_builder_and_uses_given_context_directly(self):
+        calls = []
+
+        def tool_fn(city: str) -> str:
+            calls.append(city)
+            return f"weather for {city}"
+
+        calibrator = _calibrator(alpha=0.1, n=20)
+        wrapped = wrap(tool_fn, calibrator, context_builder=_context_builder)
+
+        context = ToolCallContext(tool_name="search", args={"city": "Lisbon"}, metadata={"score": 0.0})
+        result = wrapped.call_with_context(context)
+
+        assert result.accepted
+        assert result.output == "weather for Lisbon"
+        assert calls == ["Lisbon"]
+
+    def test_tool_fn_called_with_only_context_args_not_metadata(self):
+        received = {}
+
+        def tool_fn(**kwargs) -> str:
+            received.update(kwargs)
+            return "ok"
+
+        calibrator = _calibrator(alpha=0.1, n=20)
+        wrapped = wrap(tool_fn, calibrator)
+
+        context = ToolCallContext(
+            tool_name="search", args={"city": "Lisbon"}, metadata={"score": 0.0, "extra_signal": 42}
+        )
+        wrapped.call_with_context(context)
+
+        assert received == {"city": "Lisbon"}
+
+    def test_abstains_when_context_score_exceeds_threshold(self):
+        calibrator = _calibrator(alpha=0.1, n=20)
+        wrapped = wrap(lambda **kw: "should not run", calibrator)
+
+        context = ToolCallContext(tool_name="search", args={}, metadata={"score": calibrator.q_hat + 1000})
+        result = wrapped.call_with_context(context)
+
+        assert result.decision is Decision.ABSTAIN

@@ -68,6 +68,16 @@ one baked into the `Calibrator` at calibration time.
   returns a structured abstain result), `"raise"` (raises
   `AbstainedError` carrying the full decision), or a user callback
   (invoked with the `WrapResult`; its return value becomes `.output`).
+  `WrappedTool.call_with_context(context)` is the other entry point:
+  it bypasses `context_builder` entirely and scores/runs the tool against
+  an already-built `ToolCallContext`. This exists for scoring signal that
+  isn't part of the tool's own call arguments — for example, a real
+  chat-completion API's per-response confidence/logprob data, which is
+  attached to the choice/response, not to the individual tool-call
+  object. This wasn't in the original design (§4.2 of the original spec
+  only described the `context_builder(**kwargs)` path); it was added
+  after wiring the raw-loop adapter up to a real local model surfaced the
+  gap — see `docs/real_world_validation.md`.
 - **`storage/calibration_store.py`** — a local-first SQLite store for
   `(score, outcome, metadata)` records. No network dependency; the store
   also computes staleness/size warnings (not enforcement — enforcement of
@@ -92,7 +102,19 @@ one baked into the `Calibrator` at calibration time.
   expected shape (`tool_result` block / `role: tool` message). Phase 1's
   only integration, deliberately — see `PROJECT_SPEC.md` §4.5 for why
   framework breadth is explicitly deferred until the math and this
-  adapter are both proven.
+  adapter are both proven. Both dispatch methods accept an optional
+  `extra_metadata` dict; when given, it's merged into the
+  `ToolCallContext` built directly from the tool call (via
+  `WrappedTool.call_with_context`, bypassing the tool's own
+  `context_builder`) rather than being squeezed into the tool's call
+  arguments. This is the sanctioned way to pass response-level scoring
+  signal — e.g. a real API's per-completion confidence/logprob data —
+  through the adapter. `mean_completion_logprob(choice)` is a small
+  provider-agnostic helper in this same module that aggregates an
+  OpenAI-shape chat completion choice's per-token logprobs into the
+  single scalar `logprob_score` expects; see its docstring, and
+  `docs/writing_scorers.md`, for why it averages over the whole
+  completion rather than just the argument tokens.
 - **`cli/main.py`** — `inspect`, `threshold`, `coverage-check` commands
   over a calibration store, for introspecting stored data and re-running
   the coverage proof against it without writing a script.
