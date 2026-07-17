@@ -23,6 +23,65 @@ def _stringify_output(value: Any) -> str:
         return str(value)
 
 
+class NoToolCallProducedError(RuntimeError):
+    """Raised when a tool call was required but the model did not produce one.
+
+    This is a different failure mode from an abstain, and must not be
+    confused with one: an abstain means the model DID attempt a tool
+    call and conformguard's calibrated threshold rejected it -- there was
+    a score, and the score said no. This error means the model never
+    attempted a tool call at all, so there was nothing for conformguard
+    to score in the first place. Silently treating "no tool call" as an
+    accept, folding it into an abstain, or just ignoring it, would defeat
+    this library's "never accept without a score" principle just as
+    surely as a silent pass-through would -- so ``ToolRegistry`` raises
+    this loudly instead, whenever a caller has said a tool call was
+    required (see ``handle_openai_choice``/``handle_anthropic_message``,
+    ``required=True``) and none arrived.
+
+    Real-world trigger, confirmed directly (not just anticipated): some
+    models, served through some inference servers, can fail to produce a
+    tool call at all even when explicitly asked and even when the
+    request sets a "you must call a tool" flag -- see
+    docs/real_world_validation.md's Command R7B findings for a concrete,
+    root-caused example (an inference-server-side chat template bug, not
+    a model limitation) discovered while validating this library against
+    real local models.
+    """
+
+    def __init__(self, message: str, *, finish_reason: str | None = None, content: str | None = None):
+        super().__init__(message)
+        self.finish_reason = finish_reason
+        self.content = content
+
+
+def _get(obj: Any, key: str) -> Any:
+    """Duck-typed field access: works on a dict or an SDK object alike."""
+    return obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
+
+
+def _extract_openai_tool_calls(choice: Any) -> list[dict[str, Any]]:
+    message = _get(choice, "message")
+    tool_calls = _get(message, "tool_calls") or []
+    return [tc.model_dump() if hasattr(tc, "model_dump") else tc for tc in tool_calls]
+
+
+def _extract_anthropic_tool_use_blocks(message: Any) -> list[dict[str, Any]]:
+    content = _get(message, "content") or []
+    blocks = []
+    for block in content:
+        if _get(block, "type") == "tool_use":
+            blocks.append(block.model_dump() if hasattr(block, "model_dump") else block)
+    return blocks
+
+
+def _extract_anthropic_text(message: Any) -> str | None:
+    content = _get(message, "content") or []
+    texts = [_get(block, "text") for block in content if _get(block, "type") == "text"]
+    texts = [t for t in texts if t]
+    return "\n".join(texts) if texts else None
+
+
 def mean_completion_logprob(choice: Any) -> float | None:
     """Aggregate an OpenAI-shape chat completion choice's per-token logprobs into one scalar.
 
@@ -136,6 +195,83 @@ class ToolRegistry:
         else:
             outcome = tool(**args)
         return self._to_openai_tool_message(tool_call["id"], outcome)
+
+    def handle_openai_choice(
+        self,
+        choice: Any,
+        extra_metadata: dict[str, Any] | None = None,
+        required: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Dispatch every tool call in an OpenAI-shape chat completion choice.
+
+        Accepts a full ``choice`` (SDK object or raw dict), extracts its
+        ``tool_calls`` (there may be zero, one, or several -- some models
+        emit more than one tool call per response when uncertain, e.g.
+        one per candidate answer), and dispatches each through
+        :meth:`handle_openai_tool_call`.
+
+        Args:
+            required: if True and the choice contains no tool calls,
+                raises :class:`NoToolCallProducedError` instead of
+                silently returning an empty list. Use this whenever your
+                calling code has already decided a tool call was
+                mandatory here (e.g. because the request set
+                ``tool_choice="required"``, or this step of your workflow
+                has no valid non-tool-call response) -- do not rely on
+                the request-level flag alone, since some servers accept
+                it without honoring it (see the class docstring on
+                :class:`NoToolCallProducedError`).
+
+        Returns:
+            One ``role: tool`` message per tool call (possibly empty, if
+            ``required`` is False and none were produced).
+        """
+        tool_calls = _extract_openai_tool_calls(choice)
+        if required and not tool_calls:
+            raise NoToolCallProducedError(
+                f"expected a tool call but the model produced none "
+                f"(finish_reason={_get(choice, 'finish_reason')!r}). This is not an abstain -- "
+                f"conformguard never saw a call to score, so there is no calibrated decision to "
+                f"report here. Inspect .content for what the model said instead.",
+                finish_reason=_get(choice, "finish_reason"),
+                content=_get(_get(choice, "message"), "content"),
+            )
+        return [self.handle_openai_tool_call(tc, extra_metadata=extra_metadata) for tc in tool_calls]
+
+    def handle_anthropic_message(
+        self,
+        message: Any,
+        extra_metadata: dict[str, Any] | None = None,
+        required: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Dispatch every ``tool_use`` block in an Anthropic Messages API response.
+
+        Accepts a full ``message`` (SDK object or raw dict), extracts its
+        ``tool_use`` content blocks (there may be zero, one, or several),
+        and dispatches each through :meth:`handle_anthropic_tool_use`.
+
+        Args:
+            required: if True and the message contains no ``tool_use``
+                blocks, raises :class:`NoToolCallProducedError` instead
+                of silently returning an empty list. See
+                :meth:`handle_openai_choice` for the same argument's
+                rationale.
+
+        Returns:
+            One ``tool_result`` block per ``tool_use`` block (possibly
+            empty, if ``required`` is False and none were produced).
+        """
+        tool_use_blocks = _extract_anthropic_tool_use_blocks(message)
+        if required and not tool_use_blocks:
+            raise NoToolCallProducedError(
+                f"expected a tool_use block but the model produced none "
+                f"(stop_reason={_get(message, 'stop_reason')!r}). This is not an abstain -- "
+                f"conformguard never saw a call to score, so there is no calibrated decision to "
+                f"report here. Inspect .content for what the model said instead.",
+                finish_reason=_get(message, "stop_reason"),
+                content=_extract_anthropic_text(message),
+            )
+        return [self.handle_anthropic_tool_use(block, extra_metadata=extra_metadata) for block in tool_use_blocks]
 
     @staticmethod
     def _to_anthropic_tool_result(tool_use_id: str, outcome: WrapCallResult) -> dict[str, Any]:

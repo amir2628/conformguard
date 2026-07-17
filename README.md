@@ -205,6 +205,16 @@ logprobs into a single confidence score — both are written up in full,
 including what didn't hold up under a larger sample, in
 [`docs/real_world_validation.md`](docs/real_world_validation.md).
 
+A separate, related robustness gap was found and fixed the same way:
+some models/servers can fail to produce a tool call at all even when one
+is required (root-caused to an inference-server-side chat template bug
+in one case, not a model limitation). `ToolRegistry.handle_openai_choice()`
+/ `.handle_anthropic_message()` now take a `required=True` flag that
+raises a typed `NoToolCallProducedError` (with the model's `finish_reason`
+and actual response content attached) instead of silently returning
+nothing — this is not an abstain, since conformguard never saw a call to
+score in the first place.
+
 ## CLI
 
 ```

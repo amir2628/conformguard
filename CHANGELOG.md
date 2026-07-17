@@ -34,6 +34,26 @@ sizes and what didn't generalize.
   synthetic), real accept and abstain decisions with the guarantee
   statement printed for each.
 
+Investigated a live model (Command R7B via Ollama) that never produced a
+tool call through either the OpenAI-compatible or native chat endpoint.
+Root-caused directly (not just inferred): Ollama's default chat template
+for this model hardcodes every assistant turn to begin with
+`<|START_RESPONSE|>`, which structurally prevents it from ever reaching
+the `<|START_ACTION|>` phase its own system preamble instructs it to use
+for tool calls — confirmed by bypassing the template via a raw completion
+request, which then did produce tool-call-shaped output. This is an
+Ollama-side template bug, not fixable from this library's adapter, which
+operates on the standard chat-completion surface. Fixed the general
+robustness gap this exposed regardless of the specific root cause:
+- `integrations/raw_tool_loop.py`: added `NoToolCallProducedError`, and
+  `ToolRegistry.handle_openai_choice()` / `.handle_anthropic_message()`,
+  which dispatch every tool call in a full response and raise this typed
+  error (with `finish_reason`/`stop_reason` and the model's actual
+  content attached) when `required=True` and none was produced — this is
+  not an abstain, since conformguard never saw a call to score.
+- 31 new tests, including a reproduction against the actual real response
+  captured live from the failing model.
+
 ## 0.1.0 — Phase 1
 
 Initial release: the core split-conformal calibration engine and

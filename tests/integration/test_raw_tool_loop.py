@@ -238,3 +238,166 @@ class TestMeanCompletionLogprob:
         assert mean_completion_logprob(self._sdk_shaped_choice(one_uncertain)) < mean_completion_logprob(
             self._sdk_shaped_choice(confident)
         )
+
+
+def _openai_choice_dict(tool_calls=None, finish_reason="stop", content=None):
+    return {
+        "finish_reason": finish_reason,
+        "message": {"role": "assistant", "content": content, "tool_calls": tool_calls},
+    }
+
+
+class _FakeSDKObject(SimpleNamespace):
+    """Mimics a real pydantic-based SDK object: attribute access plus .model_dump()."""
+
+    def model_dump(self):
+        return {
+            k: (v.model_dump() if hasattr(v, "model_dump") else v) for k, v in self.__dict__.items()
+        }
+
+
+def _openai_choice_sdk(tool_calls=None, finish_reason="stop", content=None):
+    tc_objs = [_FakeSDKObject(**tc) for tc in (tool_calls or [])]
+    return SimpleNamespace(
+        finish_reason=finish_reason,
+        message=SimpleNamespace(role="assistant", content=content, tool_calls=tc_objs or None),
+    )
+
+
+def _anthropic_message_dict(tool_use_blocks=None, stop_reason="end_turn", text=None):
+    content = list(tool_use_blocks or [])
+    if text:
+        content.append({"type": "text", "text": text})
+    return {"stop_reason": stop_reason, "content": content}
+
+
+class TestHandleOpenAIChoice:
+    def test_dispatches_multiple_tool_calls(self, registry):
+        tool_call_a = {
+            "id": "call_a",
+            "type": "function",
+            "function": {"name": "get_weather", "arguments": json.dumps({"city": "Oslo", "risk": 0.0})},
+        }
+        tool_call_b = {
+            "id": "call_b",
+            "type": "function",
+            "function": {"name": "get_weather", "arguments": json.dumps({"city": "Lima", "risk": 0.0})},
+        }
+        choice = _openai_choice_dict(tool_calls=[tool_call_a, tool_call_b])
+        messages = registry.handle_openai_choice(choice)
+        assert len(messages) == 2
+        assert messages[0]["tool_call_id"] == "call_a"
+        assert "sunny in Oslo" in messages[0]["content"]
+        assert messages[1]["tool_call_id"] == "call_b"
+        assert "sunny in Lima" in messages[1]["content"]
+
+    def test_no_tool_calls_and_not_required_returns_empty_list(self, registry):
+        choice = _openai_choice_dict(tool_calls=None, content="I don't have that information.")
+        messages = registry.handle_openai_choice(choice, required=False)
+        assert messages == []
+
+    def test_no_tool_calls_and_required_raises(self, registry):
+        choice = _openai_choice_dict(
+            tool_calls=None, finish_reason="stop", content="Could you clarify which city you mean?"
+        )
+        with pytest.raises(NoToolCallProducedError) as exc_info:
+            registry.handle_openai_choice(choice, required=True)
+        assert exc_info.value.finish_reason == "stop"
+        assert exc_info.value.content == "Could you clarify which city you mean?"
+
+    def test_empty_tool_calls_list_and_required_raises(self, registry):
+        choice = _openai_choice_dict(tool_calls=[], content="no tools needed")
+        with pytest.raises(NoToolCallProducedError):
+            registry.handle_openai_choice(choice, required=True)
+
+    def test_present_tool_calls_and_required_does_not_raise(self, registry):
+        tool_call = {
+            "id": "call_c",
+            "type": "function",
+            "function": {"name": "get_weather", "arguments": json.dumps({"city": "Quito", "risk": 0.0})},
+        }
+        choice = _openai_choice_dict(tool_calls=[tool_call], finish_reason="tool_calls")
+        messages = registry.handle_openai_choice(choice, required=True)
+        assert len(messages) == 1
+
+    def test_works_with_sdk_shaped_choice(self, registry):
+        tool_call = {
+            "id": "call_d",
+            "type": "function",
+            "function": _FakeSDKObject(name="get_weather", arguments=json.dumps({"city": "Bern", "risk": 0.0})),
+        }
+        choice = _openai_choice_sdk(tool_calls=[tool_call])
+        messages = registry.handle_openai_choice(choice)
+        assert len(messages) == 1
+        assert "sunny in Bern" in messages[0]["content"]
+
+    def test_sdk_shaped_choice_no_tool_calls_required_raises(self, registry):
+        choice = _openai_choice_sdk(tool_calls=None, finish_reason="stop", content="no tool used")
+        with pytest.raises(NoToolCallProducedError) as exc_info:
+            registry.handle_openai_choice(choice, required=True)
+        assert exc_info.value.finish_reason == "stop"
+
+    def test_extra_metadata_forwarded_to_each_dispatched_call(self):
+        def score_from_metadata(context):
+            return context.metadata.get("risk_from_response", 0.0)
+
+        data = [
+            (ToolCallContext(tool_name="get_weather", metadata={"risk_from_response": float(i) / 20}), True)
+            for i in range(20)
+        ]
+        calibrator = calibrate(score_from_metadata, data, alpha=0.2, hard_minimum_size=20)
+        wrapped = wrap(lambda city: f"sunny in {city}", calibrator)
+        registry = ToolRegistry({"get_weather": wrapped})
+
+        tool_call = {
+            "id": "call_e",
+            "type": "function",
+            "function": {"name": "get_weather", "arguments": json.dumps({"city": "Riga"})},
+        }
+        choice = _openai_choice_dict(tool_calls=[tool_call])
+        messages = registry.handle_openai_choice(choice, extra_metadata={"risk_from_response": 999.0})
+        assert "conformguard" in messages[0]["content"]  # abstained, given the high injected risk
+
+
+class TestHandleAnthropicMessage:
+    def test_dispatches_multiple_tool_use_blocks(self, registry):
+        block_a = {"type": "tool_use", "id": "tu_a", "name": "get_weather", "input": {"city": "Nairobi", "risk": 0.0}}
+        block_b = {"type": "tool_use", "id": "tu_b", "name": "get_weather", "input": {"city": "Cusco", "risk": 0.0}}
+        message = _anthropic_message_dict(tool_use_blocks=[block_a, block_b], stop_reason="tool_use")
+        results = registry.handle_anthropic_message(message)
+        assert len(results) == 2
+        assert results[0]["tool_use_id"] == "tu_a"
+        assert "sunny in Nairobi" in results[0]["content"]
+
+    def test_no_tool_use_and_not_required_returns_empty_list(self, registry):
+        message = _anthropic_message_dict(tool_use_blocks=[], stop_reason="end_turn", text="Which city do you mean?")
+        results = registry.handle_anthropic_message(message, required=False)
+        assert results == []
+
+    def test_no_tool_use_and_required_raises(self, registry):
+        message = _anthropic_message_dict(tool_use_blocks=[], stop_reason="end_turn", text="Which city do you mean?")
+        with pytest.raises(NoToolCallProducedError) as exc_info:
+            registry.handle_anthropic_message(message, required=True)
+        assert exc_info.value.finish_reason == "end_turn"
+        assert exc_info.value.content == "Which city do you mean?"
+
+    def test_present_tool_use_and_required_does_not_raise(self, registry):
+        block = {"type": "tool_use", "id": "tu_c", "name": "get_weather", "input": {"city": "Hanoi", "risk": 0.0}}
+        message = _anthropic_message_dict(tool_use_blocks=[block], stop_reason="tool_use")
+        results = registry.handle_anthropic_message(message, required=True)
+        assert len(results) == 1
+
+    def test_works_with_sdk_shaped_message(self, registry):
+        block = _FakeSDKObject(type="tool_use", id="tu_d", name="get_weather", input={"city": "Porto", "risk": 0.0})
+        message = SimpleNamespace(stop_reason="tool_use", content=[block])
+        results = registry.handle_anthropic_message(message)
+        assert len(results) == 1
+        assert "sunny in Porto" in results[0]["content"]
+
+    def test_sdk_shaped_message_no_tool_use_required_raises(self, registry):
+        text_block = SimpleNamespace(type="text", text="no tool needed")
+        message = SimpleNamespace(stop_reason="end_turn", content=[text_block])
+        with pytest.raises(NoToolCallProducedError) as exc_info:
+            registry.handle_anthropic_message(message, required=True)
+        assert exc_info.value.finish_reason == "end_turn"
+        assert exc_info.value.content == "no tool needed"
