@@ -1,5 +1,10 @@
 # conformguard
 
+[![PyPI version](https://img.shields.io/pypi/v/conformguard)](https://pypi.org/project/conformguard/)
+[![Supported Python versions](https://img.shields.io/pypi/pyversions/conformguard)](https://pypi.org/project/conformguard/)
+[![License](https://img.shields.io/pypi/l/conformguard)](LICENSE)
+[![CI](https://github.com/amir2628/conformguard/actions/workflows/ci.yml/badge.svg)](https://github.com/amir2628/conformguard/actions/workflows/ci.yml)
+
 Calibrated accept / abstain-and-escalate decisions for agent tool calls,
 backed by split conformal prediction's finite-sample coverage guarantee —
 not a heuristic confidence threshold.
